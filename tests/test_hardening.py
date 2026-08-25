@@ -486,6 +486,10 @@ def main():
         chk("✅ 날짜는 남긴다(아카이브가 이걸로 돈다)", sec.count("✅ 2026-08-21") == 2)
         chk("주제 파일이 없으면 제목도 대화 링크도 보존",
             "[[topics/beta|베타 묶음]]" in sec and "cc33dd44" in sec)
+        # Obsidian 은 원시 HTML 안의 마크다운을 렌더하지 않는다 — 체크박스도 링크도 죽는다
+        chk("INDEX 에 원시 HTML 태그가 없다",
+            not re.search(r"</?(details|summary|div|span|br)\b", idx))
+        chk("완료 건수는 제목에", "## ✅ 완료 (2주 보관) · 3건" in idx)
         before = idx
         sl._write_index(dv, ["- [ ] 열린 일"], done)
         chk("완료 섹션 렌더 멱등",

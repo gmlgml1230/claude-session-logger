@@ -2381,10 +2381,14 @@ def _write_index(base, open_lines=None, done_lines=None, db_path=DB_FILE, alerts
         out += ["", "## ☑️ 기타 태스크", ""] + groups + [_numbered(l, None) for l in orphan]
     if paused:  # 지금 손대지 않는 것이므로 아래로
         out += ["", "## ⏸ 보류", ""] + paused
-    out += ["", TASKS_DONE_HEADER, "",
-            f"> {DONE_RETAIN_DAYS}일이 지나면 [[{os.path.splitext(ARCHIVE_FILENAME)[0]}]] 로 옮겨집니다.", ""]
+    # 완료 섹션. **원시 HTML(`<details>`)을 쓰지 않는다** — Obsidian 이 그 안의 마크다운을
+    # 렌더하지 않아 체크박스도 링크도 없는 텍스트 덩어리로 보인다(실측).
+    # 접는 것은 제목 왼쪽 화살표로 하면 된다 — 마크다운 제목은 원래 접힌다.
+    done_head = TASKS_DONE_HEADER + (f" · {len(done_lines)}건" if done_lines else "")
+    out += ["", done_head, "",
+            f"> 제목 왼쪽 화살표로 접을 수 있습니다. "
+            f"{DONE_RETAIN_DAYS}일이 지나면 [[{os.path.splitext(ARCHIVE_FILENAME)[0]}]] 로 옮겨집니다.", ""]
     if done_lines:
-        out += [f"<details><summary>{len(done_lines)}건 — 펼치기</summary>", ""]
         # 날짜로 묶는다. '어제 뭘 끝냈나' 가 완료 목록을 여는 이유이고,
         # 묶으면 날짜가 소제목 하나로 접혀 줄마다 반복되지 않는다.
         groups, order = {}, []
@@ -2399,7 +2403,6 @@ def _write_index(base, open_lines=None, done_lines=None, db_path=DB_FILE, alerts
                 out.append("")
             out.append(f"**{d[5:] if d != '날짜 미상' else d}** ({len(groups[d])}건)")
             out += [_numbered(_shorten_done(l, base), None) for l in groups[d]]
-        out += ["", "</details>"]
     else:
         out += ["_(완료 항목 없음)_"]
     _safe_write_index(path, "\n".join(out).rstrip() + "\n")
