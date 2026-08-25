@@ -906,8 +906,13 @@ def summarize(meta, current_tasks, use_llm=True, choices=(), known=()):
     if topic.lower() in ("", "none", "null", "n/a"):
         topic = None
     elif choices and topic not in {sl for sl, _ in choices}:
-        _debug(f"[worker] 미등록 슬러그 '{topic}' → none 처리")
-        topic = None
+        # 선택지 밖이어도 **이미 쓰이는 이름**이면 받는다. 새 주제를 만드는 것이 아니라
+        # 있는 묶음에 붙이는 것이다. 여기서 떨어뜨리면 그 작업만 무소속이 된다.
+        if topic in {sl for sl, _ in (known or ())}:
+            _debug(f"[worker] 선택지 밖이지만 이미 쓰는 묶음 '{topic}' — 그대로 사용")
+        else:
+            _debug(f"[worker] 미등록 슬러그 '{topic}' → none 처리")
+            topic = None
 
     # 매칭 실패 시: 제안된 이름표를 기존 목록과 대조해 구제하고, 아니면 그 이름표를 그대로 쓴다.
     # 여기서 정해지는 슬러그에 **파일이 없을 수 있다** — 그건 주제가 아니라 목차의 묶음 키다.
@@ -1633,19 +1638,30 @@ def _topic_meta(path):
     return meta
 
 
-def _topic_choices(base):
+def _topic_choices(base, open_lines=()):
     """프롬프트에 줄 (slug, title) 목록. 완료(status: done) 주제는 제외.
 
     슬러그만 주면 매칭이 안 된다 — 'session-memory-architecture' 라는 문자열만으로
     그게 무슨 작업인지 요약기가 알 수 없기 때문. title 을 함께 준다.
+
+    **파일 없는 묶음도 넣는다.** 미완료 태스크가 달려 있는 슬러그는 이미 쓰이는 이름이고,
+    이어지는 작업이 그리로 붙어야 한다. 빼 두면 요약기가 그 이름을 정확히 골라도
+    '미등록 슬러그' 로 버려져 태스크가 무소속으로 흩어진다(실측: watcher-local-test).
+    완료 주제를 빼는 이유와 다르다 — 그쪽은 훅이 되살리면 안 되지만, 이쪽은 아직 열려 있다.
     """
     d = os.path.join(base, TOPICS_DIRNAME)
-    out = []
+    out, seen = [], set()
     for slug in _topic_slugs(base):
         m = _topic_meta(os.path.join(d, f"{slug}.md"))
         if (m.get("status") or "active") == "done":
             continue
         out.append((slug, m.get("title") or slug))
+        seen.add(slug)
+    for l in open_lines or ():
+        slug = _task_topic(l)
+        if slug and slug not in seen:
+            out.append((slug, _task_topic_alias(l) or slug))
+            seen.add(slug)
     return out
 
 
@@ -2533,7 +2549,8 @@ def _process(transcript, base=None, db_path=DB_FILE, use_llm=True):
             open_cur, done_cur = _split_tasks(current_tasks)
             base_keys = {_task_key(o) for o in open_cur}   # 3-way 병합의 기준점
 
-            choices = _topic_choices(base)   # (slug, title) 닫힌 선택지
+            # 선택지는 루프 안에서 다시 만든다(known 과 같은 이유) — 앞 날짜가 만든
+            # 묶음 키를 뒤 날짜가 그대로 고를 수 있어야 한 세션이 여러 날에 걸쳐도 안 흩어진다.
             groups = _group_by_date(new_turns, started)
             last_summary, last_conv = None, None
             processed_upto, done_groups = processed, 0
@@ -2542,7 +2559,8 @@ def _process(transcript, base=None, db_path=DB_FILE, use_llm=True):
                 # known 은 루프 안에서 다시 만든다 — 앞 날짜가 만든 묶음 키를 뒤 날짜가 재사용해야
                 # 한 세션이 며칠에 걸쳐도 같은 묶음으로 모인다.
                 summary = summarize(dmeta, "\n".join(open_cur), use_llm=use_llm,
-                                    choices=choices, known=_known_topics(base, open_cur))
+                                    choices=_topic_choices(base, open_cur),
+                                    known=_known_topics(base, open_cur))
                 if summary is None:
                     # LLM 호출 실패(오프라인·타임아웃 등). 여기서 멈추고 **마커를 전진시키지 않는다** —
                     # 그래야 다음 실행(자정 flush 등)이 이 구간을 다시 요약한다.

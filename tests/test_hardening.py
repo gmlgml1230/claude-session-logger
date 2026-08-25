@@ -496,6 +496,32 @@ def main():
             sl._strip_stamp(open(os.path.join(dv, "INDEX.md"), encoding="utf-8").read())
             == sl._strip_stamp(before))
 
+        # ㉖-8 파일 없는 묶음도 선택지에 들어가고, 선택지 밖이어도 이미 쓰는 이름이면 받는다
+        cv = os.path.join(tmp, "cv"); os.makedirs(os.path.join(cv, "topics"))
+        open(os.path.join(cv, "topics", "have-file.md"), "w", encoding="utf-8").write(
+            '---\ntitle: "파일 있는 주제"\nstatus: active\n---\n\n## 🔜 다음\n')
+        open(os.path.join(cv, "topics", "closed.md"), "w", encoding="utf-8").write(
+            '---\ntitle: "닫힌 주제"\nstatus: done\n---\n\n## 🔜 다음\n')
+        opens = ["- [ ] 남은 일  [[topics/no-file-group|파일 없는 묶음]]"]
+        ch = dict(sl._topic_choices(cv, opens))
+        chk("선택지에 파일 있는 주제", ch.get("have-file") == "파일 있는 주제")
+        chk("선택지에 파일 없는 묶음", ch.get("no-file-group") == "파일 없는 묶음")
+        chk("완료 주제는 선택지에서 제외", "closed" not in ch)
+
+        real4 = sl.summarize
+        base_ret = {"topic": "no-file-group", "topic_new": None, "progress": "- 함",
+                    "resume": "다음", "verified": "", "blocker": "",
+                    "conclusions": [], "dropped": [], "tasks_add": []}
+        sl.call_claude = lambda *a, **k: (json.dumps(base_ret, ensure_ascii=False), None)
+        got = sl.summarize({"turns": [], "title": "t"}, "",
+                           choices=[("have-file", "파일 있는 주제")],
+                           known=[("no-file-group", "파일 없는 묶음")])
+        chk("선택지 밖이어도 이미 쓰는 묶음이면 받는다", got["topic"] == "no-file-group")
+        got = sl.summarize({"turns": [], "title": "t"}, "",
+                           choices=[("have-file", "파일 있는 주제")], known=[])
+        chk("정말 모르는 슬러그는 none 으로", got["topic"] is None)
+        sl.summarize = real4
+
         # ㉗ DB 를 못 읽어 중단할 때도 목차에 남는다
         av = os.path.join(tmp, "av"); os.makedirs(os.path.join(av, "topics"))
         open(os.path.join(av, "INDEX.md"), "w", encoding="utf-8").write(
