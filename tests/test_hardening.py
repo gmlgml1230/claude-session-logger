@@ -464,6 +464,34 @@ def main():
         chk("펜스형 뒤에 단독형을 섞으면 순서대로 처리",
             mixed.count("블록 생략") == 1 and "이후" in mixed and "중간" in mixed)
 
+        # ㉖-7 완료 섹션: 날짜로 묶고, **주제 파일이 있을 때만** 줄인다
+        dv = os.path.join(tmp, "dv"); os.makedirs(os.path.join(dv, "topics"))
+        open(os.path.join(dv, "topics", "alpha.md"), "w", encoding="utf-8").write(
+            '---\ntitle: "알파"\nstatus: active\n---\n\n## 🔜 다음\n')
+        done = [
+            "- [x] 첫째 일  [[topics/alpha|알파]]  [[conversations/aa11bb22_2026-08-21|↗ 대화]] ✅ 2026-08-21",
+            "- [x] 둘째 일  [[topics/alpha|알파]] ✅ 2026-08-21",
+            "- [x] 셋째 일  [[topics/beta|베타 묶음]]  [[conversations/cc33dd44_2026-08-19|↗ 대화]] ✅ 2026-08-19",
+        ]
+        open(os.path.join(dv, "INDEX.md"), "w", encoding="utf-8").write(
+            "# 🧭 INDEX\n\n## ☑️ 기타 태스크\n\n- [ ] 열린 일\n")
+        sl._write_index(dv, ["- [ ] 열린 일"], done)
+        idx = open(os.path.join(dv, "INDEX.md"), encoding="utf-8").read()
+        # 완료 섹션만 본다 — `[[topics/alpha|알파]]` 는 진행 중 주제 줄에도 정상적으로 있다
+        sec = idx.split("## ✅ 완료", 1)[1]
+        chk("완료를 날짜로 묶는다", "**08-21** (2건)" in sec and "**08-19** (1건)" in sec)
+        chk("주제 파일이 있으면 alias 를 🔧 로", "[[topics/alpha|🔧]]" in sec
+            and "[[topics/alpha|알파]]" not in sec)
+        chk("주제 파일이 있으면 대화 링크를 뗀다", "aa11bb22" not in sec)
+        chk("✅ 날짜는 남긴다(아카이브가 이걸로 돈다)", sec.count("✅ 2026-08-21") == 2)
+        chk("주제 파일이 없으면 제목도 대화 링크도 보존",
+            "[[topics/beta|베타 묶음]]" in sec and "cc33dd44" in sec)
+        before = idx
+        sl._write_index(dv, ["- [ ] 열린 일"], done)
+        chk("완료 섹션 렌더 멱등",
+            sl._strip_stamp(open(os.path.join(dv, "INDEX.md"), encoding="utf-8").read())
+            == sl._strip_stamp(before))
+
         # ㉗ DB 를 못 읽어 중단할 때도 목차에 남는다
         av = os.path.join(tmp, "av"); os.makedirs(os.path.join(av, "topics"))
         open(os.path.join(av, "INDEX.md"), "w", encoding="utf-8").write(

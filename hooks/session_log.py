@@ -2152,6 +2152,26 @@ def _open_tasks_by_topic(base, open_lines=None):
     return by_topic, orphan
 
 
+def _shorten_done(line, base):
+    """완료 줄에서 **매 줄 반복되는 것**을 줄인다 — 주제 제목과 대화 링크.
+
+    완료 25건 기준 실측: 한 줄 중앙값 153자·최대 218자였고, 그 대부분이 주제 제목(40자)과
+    대화 링크(45자)의 반복이었다.
+
+    **주제 파일이 있을 때만 줄인다.** 파일 없는 묶음은 링크 alias 가 제목의 유일한 저장소이고
+    대화 링크가 그 작업의 유일한 흔적이라, 줄이면 되짚을 길이 사라진다.
+    `✅ 날짜`·`[[topics/…]]` 는 남긴다 — 아카이브 이동과 주제 그룹핑이 그것으로 돈다.
+    """
+    slug = _task_topic(line)
+    if not slug or not os.path.exists(os.path.join(base, TOPICS_DIRNAME, f"{slug}.md")):
+        return line
+    line = re.sub(r"(\[\[" + re.escape(TOPICS_DIRNAME) + r"/[^|\]]+\|)[^\]]*\]\]",
+                  r"\g<1>🔧]]", line)
+    # 주제 링크 외의 링크(대화·구설계 세션)를 뗀다. 그 내용은 주제 파일의 진행 로그에 있다.
+    line = re.sub(r"\s*\[\[(?!" + re.escape(TOPICS_DIRNAME) + r"/)[^\]]*\]\]", "", line)
+    return line
+
+
 def _write_index(base, open_lines=None, done_lines=None, db_path=DB_FILE, alerts=()):
     """INDEX.md 재생성. **태스크의 정본이자 목차**다.
 
@@ -2365,7 +2385,20 @@ def _write_index(base, open_lines=None, done_lines=None, db_path=DB_FILE, alerts
             f"> {DONE_RETAIN_DAYS}일이 지나면 [[{os.path.splitext(ARCHIVE_FILENAME)[0]}]] 로 옮겨집니다.", ""]
     if done_lines:
         out += [f"<details><summary>{len(done_lines)}건 — 펼치기</summary>", ""]
-        out += [_numbered(l, None) for l in done_lines]
+        # 날짜로 묶는다. '어제 뭘 끝냈나' 가 완료 목록을 여는 이유이고,
+        # 묶으면 날짜가 소제목 하나로 접혀 줄마다 반복되지 않는다.
+        groups, order = {}, []
+        for l in done_lines:                      # 이미 최신 완료가 위로 정렬돼 있다
+            d = _done_date(l) or "날짜 미상"
+            if d not in groups:
+                groups[d] = []
+                order.append(d)
+            groups[d].append(l)
+        for i, d in enumerate(order):
+            if i:
+                out.append("")
+            out.append(f"**{d[5:] if d != '날짜 미상' else d}** ({len(groups[d])}건)")
+            out += [_numbered(_shorten_done(l, base), None) for l in groups[d]]
         out += ["", "</details>"]
     else:
         out += ["_(완료 항목 없음)_"]
