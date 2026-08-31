@@ -1828,7 +1828,10 @@ def _append_topic(base, slug, date, sid8, progress, next_step,
     # 작업 경로 — 이어서 하려면 어디로 cd 할지가 필요한데 지금은 `plan:` 이 있는 주제만 알 수 있다.
     # cwd 는 파이썬이 이미 아는 값이라 0토큰이다. 한 주제가 여러 repo 에 걸치므로 누적한다.
     if cwd:
-        repo = cwd.rstrip("/").split("/")[-1]
+        # cwd 의 basename 을 그대로 쓰면 저장소가 아닌 폴더(day1)나 하위 디렉터리
+        # 이름(plans)이 섞인다 — _workspaces 가 영영 못 찾는 이름들이다.
+        _root = _repo_root(cwd)
+        repo = os.path.basename(_root) if _root else ""
         if repo and repo != "?":
             # 기준 HEAD 를 cwd 것 하나(`head:`)로만 들면 나머지 저장소는 영영
             # '기록 HEAD 없음' 이고, 그 하나 때문에 목차 줄 전체가 '기준 HEAD 미기록' 이 된다

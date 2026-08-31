@@ -683,6 +683,22 @@ def main():
         chk("어느 저장소인지 모호하면 적지 않는다",
             sl._topic_meta(vtp).get("verified_head"), "")
 
+        # ㉜ repos 에는 **저장소 루트 이름**만 들어간다.
+        #    cwd 의 basename 을 그대로 쓰면 저장소가 아닌 폴더(day1)나 하위 디렉터리
+        #    이름(plans)이 목록을 오염시킨다 — _workspaces 가 영영 못 찾는 이름들이다.
+        sub = os.path.join(mrepo["ra"], "plans"); os.makedirs(sub, exist_ok=True)
+        rtp = os.path.join(mv, "topics", "r.md")
+        open(rtp, "w", encoding="utf-8").write(SKELETON)
+        sl._append_topic(mv, "r", "2026-08-21", "eeee5555", "- 작업", "다음",
+                         cwd=sub, session_id="s" * 8)
+        chk("하위 디렉터리 cwd → 저장소 루트 이름",
+            sl._fm_list(open(rtp, encoding="utf-8").read(), "repos"),
+            [f"ra@{sl._git_state(mrepo['ra'])[1]}"])
+        open(rtp, "w", encoding="utf-8").write(SKELETON)
+        sl._append_topic(mv, "r", "2026-08-21", "eeee5555", "- 작업", "다음",
+                         cwd=parent, session_id="s" * 8)
+        chk("저장소가 아닌 cwd 는 repos 에 안 들어간다",
+            sl._fm_list(open(rtp, encoding="utf-8").read(), "repos"), [])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("\n" + ("=== 전부 통과 ===" if not FAIL else f"=== 실패 {len(FAIL)}건: {FAIL} ==="))
