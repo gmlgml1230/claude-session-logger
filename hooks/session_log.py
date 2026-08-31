@@ -1794,6 +1794,10 @@ def _append_topic(base, slug, date, sid8, progress, next_step,
             txt = _fm_set(txt, "branch", br)
         if cwd_head:
             txt = _fm_set(txt, "head", cwd_head)
+            # 소급 복구가 남긴 `head_source: unknown`("세션 당시 HEAD 미기록")은 실제 sha 가
+            # 생기는 순간 거짓이 된다. 코드가 읽지 않는 값이라 그냥 두면 서로를 부정하는
+            # 두 줄이 한 파일에 남는다.
+            txt = _fm_del(txt, "head_source")
     if session_id:
         txt = _fm_set(txt, "session", session_id)      # 마지막 세션 full id — resume 대상
     # blocker 는 풀리면 사라져야 하므로 매번 덮어쓴다(없으면 지운다)

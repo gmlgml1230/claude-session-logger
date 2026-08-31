@@ -640,6 +640,17 @@ def main():
         chk("sha 없는 출처가 기준을 선점하지 않는다",
             sorted(os.path.basename(k) for k, v in ws2.items() if v), ["ra", "rb"])
 
+        # ㉚ head 를 기록하면 소급 복구가 남긴 head_source 잔재를 걷는다.
+        #    안 걷으면 '미기록(소급분)' 과 실제 sha 가 한 파일에 공존해 서로를 부정한다.
+        htp = os.path.join(mv, "topics", "h.md")
+        open(htp, "w", encoding="utf-8").write(
+            SKELETON.replace("updated: 2026-08-20\n",
+                             "updated: 2026-08-20\nhead_source: unknown   # 세션 당시 HEAD 미기록(소급 복구분)\n"))
+        sl._append_topic(mv, "h", "2026-08-21", "cccc3333", "- 작업", "다음",
+                         cwd=mrepo["ra"], session_id="s" * 8)
+        htxt = open(htp, encoding="utf-8").read()
+        chk("head 기록 시 head_source 잔재 제거", "head_source" not in htxt)
+        chk("head 기록 시 head 는 남는다", bool(re.search(r"^head: \w+", htxt, re.M)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("\n" + ("=== 전부 통과 ===" if not FAIL else f"=== 실패 {len(FAIL)}건: {FAIL} ==="))
