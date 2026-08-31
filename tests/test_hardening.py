@@ -589,6 +589,57 @@ def main():
         sl.summarize = real2
         chk("실패가 INDEX 에 즉시 표시됨",
             "기록 실패" in open(os.path.join(base, "INDEX.md"), encoding="utf-8").read())
+
+        # ㉙ 여러 저장소에 걸친 주제는 **저장소마다** 기준 HEAD 를 갖는다.
+        #    cwd 것만 `head:` 에 담으면 나머지는 영영 '기록 HEAD 없음' 이고,
+        #    그 하나 때문에 줄 전체가 '기준 HEAD 미기록' 이 된다(실측: watcher-local-test).
+        mv = os.path.join(tmp, "mv"); os.makedirs(os.path.join(mv, "topics"))
+        mrepo = {}
+        for nm in ("ra", "rb"):
+            d = os.path.join(tmp, nm); os.makedirs(d)
+            subprocess.run(["git", "-C", d, "init", "-q", "-b", "main"], check=True)
+            for k, v in (("user.email", "t@t"), ("user.name", "t")):
+                subprocess.run(["git", "-C", d, "config", k, v], check=True)
+            open(os.path.join(d, "a"), "w").write("1")
+            subprocess.run(["git", "-C", d, "add", "-A"], capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-qm", "i"], capture_output=True)
+            mrepo[nm] = d
+        mtp = os.path.join(mv, "topics", "m.md")
+        open(mtp, "w", encoding="utf-8").write(SKELETON)
+        # 두 저장소를 각각 cwd 로 한 세션이 차례로 끝난다
+        sl._append_topic(mv, "m", "2026-08-21", "aaaa1111", "- ra 작업", "다음",
+                         cwd=mrepo["ra"], session_id="s" * 8)
+        sl._append_topic(mv, "m", "2026-08-22", "bbbb2222", "- rb 작업", "다음",
+                         cwd=mrepo["rb"], session_id="s" * 8)
+        mtxt = open(mtp, encoding="utf-8").read()
+        repos = sl._fm_list(mtxt, "repos")
+        chk("다중 저장소: repos 에 둘 다", sorted(r.partition("@")[0] for r in repos),
+            ["ra", "rb"])
+        chk("다중 저장소: 저장소마다 기준 sha", all("@" in r for r in repos))
+        # 두 저장소 모두 그 뒤로 한 커밋씩 진행된다
+        for nm, d in mrepo.items():
+            open(os.path.join(d, "b"), "w").write("2")
+            subprocess.run(["git", "-C", d, "add", "-A"], capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-qm", "n"], capture_output=True)
+        ws = dict(sl._workspaces(sl._topic_meta(mtp)))
+        chk("다중 저장소: 두 저장소 다 기준을 안다",
+            sorted(os.path.basename(k) for k, v in ws.items() if v), ["ra", "rb"])
+        wr = []
+        for wp, wh in ws.items():
+            wr += sl._repo_warnings(wp, None, wh, os.path.basename(wp))
+        chk("다중 저장소: 기록 HEAD 없음이 안 난다",
+            [w for w in wr if "기록 HEAD 없음" in w], [])
+        chk("다중 저장소: 양쪽 드리프트가 다 보인다",
+            sorted(w for w in wr if "그 뒤" in w), ["ra: 그 뒤 1커밋", "rb: 그 뒤 1커밋"])
+        # 기준을 **아는** 출처가 이긴다 — sha 없는 `workspaces:` 가 먼저 읽혀
+        # sha 있는 `repos:` 를 선점하면 그 저장소는 영영 기준을 잃는다(실측).
+        wtxt = open(mtp, encoding="utf-8").read().replace(
+            "repos:", "workspaces: [ra, rb]\nrepos:", 1)
+        open(mtp, "w", encoding="utf-8").write(wtxt)
+        ws2 = dict(sl._workspaces(sl._topic_meta(mtp)))
+        chk("sha 없는 출처가 기준을 선점하지 않는다",
+            sorted(os.path.basename(k) for k, v in ws2.items() if v), ["ra", "rb"])
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("\n" + ("=== 전부 통과 ===" if not FAIL else f"=== 실패 {len(FAIL)}건: {FAIL} ==="))

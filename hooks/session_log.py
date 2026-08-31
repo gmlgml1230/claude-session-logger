@@ -1788,11 +1788,12 @@ def _append_topic(base, slug, date, sid8, progress, next_step,
     # 재개에 필요한 것은 "어느 세션이었나"보다 "어디서·어떤 코드 상태에서 하던 일인가"다.
     if cwd:
         txt = _fm_set(txt, "cwd", cwd)
-        br, head = _git_state(cwd)
+        # 위쪽 진행 로그 삽입이 `head` 를 문자열로 쓰고 지나간다 — 이름을 나눠 둔다.
+        br, cwd_head = _git_state(cwd)
         if br:
             txt = _fm_set(txt, "branch", br)
-        if head:
-            txt = _fm_set(txt, "head", head)
+        if cwd_head:
+            txt = _fm_set(txt, "head", cwd_head)
     if session_id:
         txt = _fm_set(txt, "session", session_id)      # 마지막 세션 full id — resume 대상
     # blocker 는 풀리면 사라져야 하므로 매번 덮어쓴다(없으면 지운다)
@@ -1813,9 +1814,19 @@ def _append_topic(base, slug, date, sid8, progress, next_step,
     # cwd 는 파이썬이 이미 아는 값이라 0토큰이다. 한 주제가 여러 repo 에 걸치므로 누적한다.
     if cwd:
         repo = cwd.rstrip("/").split("/")[-1]
-        cur = _fm_list(txt, "repos")
-        if repo and repo != "?" and repo not in cur:
-            txt = _fm_set(txt, "repos", "[" + ", ".join(cur + [repo]) + "]")
+        if repo and repo != "?":
+            # 기준 HEAD 를 cwd 것 하나(`head:`)로만 들면 나머지 저장소는 영영
+            # '기록 HEAD 없음' 이고, 그 하나 때문에 목차 줄 전체가 '기준 HEAD 미기록' 이 된다
+            # (실측: watcher-local-test 는 head 가 있는데도 그렇게 떴다).
+            # 저장소마다 자기 기준을 `name@sha` 로 들게 한다 — _workspaces 가 읽는 형식이다.
+            # sha 는 위 인계 패킷에서 이미 잰 값이라 git 을 다시 부르지 않는다.
+            item = f"{repo}@{cwd_head}" if cwd_head else repo
+            cur = _fm_list(txt, "repos")
+            out = [item if c.partition("@")[0] == repo else c for c in cur]
+            if item not in out:
+                out.append(item)
+            if out != cur:
+                txt = _fm_set(txt, "repos", "[" + ", ".join(out) + "]")
     if next_step:
         # '다음'의 정본은 '## 🔜 다음' 섹션 하나다 (_topic_meta 가 여기서 읽는다).
         # frontmatter 에 next 를 중복 기록하지 않는다.
@@ -2123,9 +2134,20 @@ def _workspaces(m):
 
     def add(path, sha=None):
         root = _repo_root((path or "").rstrip("/"))
-        if root and root not in seen:
-            seen.add(root)
-            out.append((root, sha or None))
+        if not root:
+            return
+        if root in seen:
+            # 같은 저장소가 여러 출처로 들어온다(cwd·workspaces·repos). **기준 sha 를 아는
+            # 쪽이 이겨야 한다** — sha 없는 항목이 먼저 선점하면 그 저장소는 영영
+            # '기록 HEAD 없음' 이고, 그 하나 때문에 목차 줄 전체가 '기준 HEAD 미기록' 이
+            # 된다(실측: `workspaces:` 가 `repos:` 보다 먼저 읽혀 그렇게 됐다).
+            if sha:
+                for i, (p, s) in enumerate(out):
+                    if p == root and not s:
+                        out[i] = (root, sha)
+            return
+        seen.add(root)
+        out.append((root, sha or None))
 
     add(cwd, m.get("head"))                      # cwd 가 저장소면 그것이 기준
     for src in (m.get("workspaces"), m.get("repos")):
