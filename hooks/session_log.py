@@ -1808,10 +1808,21 @@ def _append_topic(base, slug, date, sid8, progress, next_step,
     if verified:
         txt = _fm_set(txt, "verified", _yaml_val(verified))
         # 검증은 특정 코드 상태에 대한 것이다. dirty 면 그 HEAD 가 검증 대상을 대표하지 못한다.
-        _, vh = _git_state(cwd) if cwd else (None, None)
-        dirty = any(W_DIRTY in w for w in _repo_warnings(cwd)) if cwd else True
+        # cwd 가 저장소가 아닌 세션도 있다 — 여러 repo 를 담은 상위 폴더(day1)에서 일하면
+        # 그렇다. cwd 만 재면 그런 세션은 **검증 직후에 '검증 시점 미기록' 이 된다**(실측:
+        # logger-hardening). 주제가 아는 저장소가 하나뿐이면 그것으로 잰다. 여럿이면 어느
+        # 것에 대한 검증인지 알 수 없으므로 적지 않는다 — 틀린 기준은 없는 기준보다 나쁘다.
+        target = _repo_root(cwd) if cwd else None
+        if not target and cwd:
+            cand = _workspaces({"cwd": cwd, "head": cwd_head,
+                                "workspaces": ", ".join(_fm_list(txt, "workspaces")),
+                                "repos": ", ".join(_fm_list(txt, "repos"))})
+            target = cand[0][0] if len(cand) == 1 else None
+        _, vh = _git_state(target) if target else (None, None)
+        dirty = any(W_DIRTY in w for w in _repo_warnings(target)) if target else True
         if vh and not dirty:
-            txt = _fm_set(txt, "verified_head", vh)
+            # sha 만 적으면 읽는 쪽이 '그 sha 를 아는 저장소' 를 찾아 헤매야 한다.
+            txt = _fm_set(txt, "verified_head", f"{os.path.basename(target)}@{vh}")
         else:
             txt = _fm_del(txt, "verified_head")
     # 작업 경로 — 이어서 하려면 어디로 cd 할지가 필요한데 지금은 `plan:` 이 있는 주제만 알 수 있다.
@@ -2330,10 +2341,13 @@ def _write_index(base, open_lines=None, done_lines=None, db_path=DB_FILE, alerts
         if m.get("blocker"):
             line += f"\n  🚧 막힘: {m['blocker']}"
         if m.get("verified"):
-            vh, note = m.get("verified_head"), ""
-            # 검증 sha 가 어느 저장소 것인지는 적혀 있지 않다. **그 sha 를 아는 저장소**에서
-            # 재야 한다 — cwd 만 보면, cwd 가 저장소가 아닐 때 "기록 커밋 없음 — 판정 불가"가
-            # 나오고 그 안의 '커밋' 이라는 글자에 걸려 **판정 불가가 '변경됨' 으로 둔갑한다**(실측).
+            # `name@sha` 로 적힌다. 과거 기록은 sha 만 있어 rpartition 이 그대로 돌려준다.
+            vh = (m.get("verified_head") or "").rpartition("@")[2] or None
+            note = ""
+            # 이름이 붙기 전에 쓰인 기록은 어느 저장소 것인지 적혀 있지 않다. 그때는
+            # **그 sha 를 아는 저장소**를 찾아 재야 한다 — cwd 만 보면, cwd 가 저장소가
+            # 아닐 때 "기록 커밋 없음 — 판정 불가"가 나오고 그 안의 '커밋' 이라는 글자에
+            # 걸려 **판정 불가가 '변경됨' 으로 둔갑한다**(실측).
             drift = None
             for wp, _wh in (ws or []) + [(cwd, None)]:
                 ws_warn = _repo_warnings(wp, None, vh, cache=wcache) if vh else []

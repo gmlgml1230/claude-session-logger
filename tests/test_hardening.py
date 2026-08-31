@@ -651,6 +651,38 @@ def main():
         htxt = open(htp, encoding="utf-8").read()
         chk("head 기록 시 head_source 잔재 제거", "head_source" not in htxt)
         chk("head 기록 시 head 는 남는다", bool(re.search(r"^head: \w+", htxt, re.M)))
+
+        # ㉛ cwd 가 저장소가 아닌 세션도 검증 sha 를 남긴다.
+        #    여러 repo 를 담은 상위 폴더에서 일하면(day1 처럼) cwd 는 저장소가 아니다.
+        #    cwd 만 보면 vh 가 None 이라 verified_head 가 **매번 지워진다**(실측:
+        #    logger-hardening 이 검증 직후 '검증 시점 미기록' 이 됐다).
+        parent = os.path.join(tmp, "parent"); os.makedirs(parent)
+        only = os.path.join(parent, "only")
+        shutil.copytree(mrepo["ra"], only)
+        vtp = os.path.join(mv, "topics", "v.md")
+        open(vtp, "w", encoding="utf-8").write(
+            SKELETON.replace("updated: 2026-08-20\n", "updated: 2026-08-20\nrepos: [only]\n"))
+        sl._append_topic(mv, "v", "2026-08-21", "dddd4444", "- 작업", "다음",
+                         cwd=parent, session_id="s" * 8, verified="테스트 통과")
+        vm = sl._topic_meta(vtp)
+        chk("비저장소 cwd 도 검증 sha 를 남긴다", bool(vm.get("verified_head")))
+        chk("검증 sha 는 어느 저장소 것인지 함께 적는다",
+            (vm.get("verified_head") or "").startswith("only@"))
+        # 읽는 쪽이 그 형식을 그대로 해석한다 — 드리프트 0 이면 경고가 붙지 않는다
+        sl._write_index(mv, db_path=db)
+        idx = open(os.path.join(mv, "INDEX.md"), encoding="utf-8").read()
+        chk("name@sha 를 읽어 대조까지 간다",
+            "검증 시점 미기록" not in idx and "검증 시점 대조 불가" not in idx)
+        # 저장소가 여럿이면 어느 것에 대한 검증인지 알 수 없다 — 적지 않는다
+        two = os.path.join(parent, "two"); shutil.copytree(mrepo["rb"], two)
+        open(vtp, "w", encoding="utf-8").write(
+            SKELETON.replace("updated: 2026-08-20\n",
+                             "updated: 2026-08-20\nrepos: [only, two]\n"))
+        sl._append_topic(mv, "v", "2026-08-22", "dddd4444", "- 작업", "다음",
+                         cwd=parent, session_id="s" * 8, verified="테스트 통과")
+        chk("어느 저장소인지 모호하면 적지 않는다",
+            sl._topic_meta(vtp).get("verified_head"), "")
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("\n" + ("=== 전부 통과 ===" if not FAIL else f"=== 실패 {len(FAIL)}건: {FAIL} ==="))

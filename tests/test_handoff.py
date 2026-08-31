@@ -80,7 +80,10 @@ def main():
         chk("branch 기록", g("branch") in ("main", "master"))
         chk("head 기록", g("head") == head)
         chk("verified 기록", "pytest" in g("verified"))
-        chk("verified_head 기록(clean)", g("verified_head") == head)
+        # 어느 저장소의 sha 인지 함께 적는다 — 읽는 쪽이 그 sha 를 아는 저장소를
+        # 찾아 헤매지 않아도 되고, cwd 가 저장소가 아닌 세션도 기준을 남길 수 있다.
+        chk("verified_head 기록(clean, name@sha)",
+            g("verified_head") == f"{os.path.basename(repo)}@{head}")
         chk("진행 로그 append", "스키마 정리" in fm)
         chk("결론 append", "결론 A" in fm)
 
