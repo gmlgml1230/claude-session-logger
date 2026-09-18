@@ -1,26 +1,15 @@
 {
-  "_comment": "~/.claude/settings.json 에 병합할 최소 설정. command 경로는 clone 위치에 맞춰 바꿀 것.",
-  "env": {
-    "OBSIDIAN_VAULT": "/absolute/path/to/your/Obsidian"
-  },
   "hooks": {
     "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/claude-obsidian-logger/hooks/session_log.py"
-          }
-        ]
-      }
-    ],
-    "FileChanged": [
-      {
-        "matcher": "INDEX.md",
-        "hooks": [
+            "command": "python3 /path/to/claude-session-logger/hooks/session_log.py"
+          },
           {
             "type": "command",
-            "command": "python3 ~/claude-obsidian-logger/hooks/session_log.py --filechanged"
+            "command": "python3 /path/to/claude-session-logger/hooks/nolog_purge.py"
           }
         ]
       }

@@ -4,7 +4,7 @@ nolog_purge.py — Claude Code SessionEnd hook.
 
 `#nolog` / `#기록제외` / `#skiplog` 를 친 세션의 **CLI transcript 를 디스크에서 지운다.**
 
-session_log.py 는 Obsidian 기록만 막는다(`_is_excluded`). CLI 쪽 transcript
+session_log.py 는 대화 기록만 막는다(`_is_excluded`). CLI 쪽 transcript
 (`~/.claude/projects/<slug>/<sid>.jsonl`)는 그대로 남아 `/resume` 목록에 계속 뜨고,
 `cleanupPeriodDays` 만료(기본 30일)까지 디스크에 있다. `/clear` 도 이 파일을 지우지
 않는다 — 컨텍스트만 비우고 새 대화를 시작할 뿐이다. 이 훅이 그 구멍을 막는다.
@@ -47,7 +47,7 @@ def _debug(msg):
 def _is_nolog(transcript):
     """판정은 session_log.py 의 규칙을 **그대로 재사용**한다.
 
-    마커 인식이 두 곳에서 갈리면 'Obsidian 엔 안 남았는데 transcript 는 남는'
+    마커 인식이 두 곳에서 갈리면 '기록엔 안 남았는데 transcript 는 남는'
     (또는 그 반대의) 상태가 조용히 생긴다. `_has_marker` 는 마커가 **단독 줄**일 때만
     인정하는데, 그 규칙을 여기서 재구현하면 언젠가 어긋난다.
 
@@ -110,6 +110,39 @@ def purge(transcript, dry=False):
     return True
 
 
+# ── 제외 디렉토리 ────────────────────────────────────────────────────────────
+# 여기 아래에서 돌아간 세션은 볼트에 적재하지도, transcript 를 지우지도 않는다.
+# 그 저장소가 자기 기록을 스스로 관리하고, transcript 는 그쪽의 측정 자료이기 때문이다.
+# 콜론으로 구분해 SESSIONLOG_EXCLUDE_DIRS 로 덮어쓸 수 있다.
+EXCLUDE_DIRS = tuple(
+    os.path.realpath(os.path.expanduser(p))
+    for p in (os.environ.get("SESSIONLOG_EXCLUDE_DIRS")
+              or "~/dlymake-site").split(":") if p.strip()
+)
+
+
+def _excluded_cwd(payload):
+    """SessionEnd 페이로드가 제외 디렉토리에서 온 것이면 True.
+
+    cwd 가 있으면 그것으로 판정한다. 없으면 transcript 의 부모 디렉토리 이름으로 판정하되
+    **되짚지 않고 정방향으로 인코딩해 비교한다** — Claude 는 작업 경로의 `/` 를 `-` 로 바꿔
+    디렉토리 이름을 만들므로, 그 이름을 다시 경로로 되돌리면 원래 이름에 있던 하이픈과
+    구분되지 않는다(`dlymake-site` 가 `dlymake/site` 가 된다)."""
+    cwd = payload.get("cwd") or ""
+    if cwd:
+        try:
+            real = os.path.realpath(os.path.expanduser(cwd))
+        except Exception:
+            return False
+        return any(real == d or real.startswith(d + os.sep) for d in EXCLUDE_DIRS)
+
+    parent = os.path.basename(os.path.dirname(payload.get("transcript_path") or ""))
+    if not parent:
+        return False
+    return any(parent == d.replace("/", "-") or parent.startswith(d.replace("/", "-") + "-")
+               for d in EXCLUDE_DIRS)
+
+
 def main():
     if "--dry-run" in sys.argv:
         rest = [a for a in sys.argv[1:] if a != "--dry-run"]
@@ -124,6 +157,9 @@ def main():
         payload = json.load(sys.stdin)
     except Exception:
         _debug("ABORT: stdin JSON 파싱 실패")
+        return 0
+    if _excluded_cwd(payload):
+        _debug(f"SKIP: 제외 디렉토리 — cwd={payload.get('cwd')!r}")
         return 0
     transcript = payload.get("transcript_path")
     _debug(f"SessionEnd reason={payload.get('reason')} transcript={transcript}")
